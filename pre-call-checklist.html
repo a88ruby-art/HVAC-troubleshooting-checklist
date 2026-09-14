@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pre-Call Checklist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#ffffff;
+    --field:#eef1f5;
+    --line:#cfd6de;
+    --ink:#10243b;
+    --muted:#5d6e80;
+    --amber:#f5a300;
+    --alert:#b3261e;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{
+    background:var(--field);
+    color:var(--ink);
+    font-family:"Barlow",system-ui,-apple-system,sans-serif;
+    font-size:17px;line-height:1.45;
+    padding-bottom:128px;
+  }
+  .wrap{max-width:560px;margin:0 auto;background:var(--paper)}
+
+  header{background:var(--ink);color:#fff;padding:20px 18px 18px}
+  header h1{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:34px;line-height:1;margin:0}
+  header p{margin:8px 0 0;font-size:15px;color:#a9bdd2;max-width:44ch}
+
+  section{border-bottom:10px solid var(--field);padding:4px 18px 22px}
+  h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:21px;margin:20px 0 6px;padding-bottom:7px;border-bottom:2px solid var(--ink)}
+  h2 + .hint{margin:0 0 14px;font-size:15px;color:var(--muted)}
+  h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17px;margin:18px 0 9px;color:var(--muted)}
+
+  label{display:block;margin:0 0 4px;font-size:15px;font-weight:500;color:var(--muted)}
+  .req label::after{content:" •";color:var(--amber);font-size:19px;line-height:0}
+  .f{margin:0 0 15px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}
+  .unit{font-weight:400;color:#8b9aa8}
+
+  input,select,textarea{
+    width:100%;font:inherit;font-size:17px;color:var(--ink);
+    background:var(--field);border:1px solid var(--line);border-radius:5px;
+    padding:12px 11px;min-height:48px;
+  }
+  .row3 input{padding:12px 7px;text-align:center}
+  textarea{min-height:86px;resize:vertical;line-height:1.4}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);background:#fff}
+  input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--amber);outline-offset:1px}
+  select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 19px) 22px,calc(100% - 13px) 22px;background-size:6px 6px;background-repeat:no-repeat}
+
+  .flag{margin:-8px 0 15px;font-size:15px;border-left:3px solid var(--amber);padding-left:10px;color:var(--muted)}
+  .flag.bad{border-color:var(--alert);color:var(--alert);font-weight:500}
+
+  .more{
+    font:inherit;font-size:16px;font-weight:500;width:100%;
+    background:var(--field);color:var(--ink);border:1px dashed var(--line);
+    border-radius:5px;padding:12px;min-height:48px;cursor:pointer;margin-bottom:15px;
+  }
+  .more[aria-expanded="true"]{display:none}
+
+  .bar{position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:#fff;padding:12px 18px calc(12px + env(safe-area-inset-bottom))}
+  .bar .inner{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:14px}
+  .status{flex:1;font-size:15px;line-height:1.3}
+  .status b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:20px;font-weight:600}
+  .status.go b{color:#7ee2a8}
+  .status.wait b{color:var(--amber)}
+  .bar button{font-family:"Barlow Condensed",sans-serif;font-size:20px;font-weight:600;background:var(--amber);color:var(--ink);border:0;border-radius:5px;padding:13px 20px;min-height:52px;cursor:pointer;white-space:nowrap}
+  .bar button[disabled]{background:#3a4d64;color:#8ea3ba;cursor:not-allowed}
+  .bar button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+
+  @media (max-width:380px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Before you call</h1>
+  <p>Work it top to bottom at the unit. Dotted fields have to be filled before you can copy it out.</p>
+</header>
+
+<section>
+  <h2>Unit</h2>
+  <p class="hint">Off the data plate, not from memory.</p>
+  <div class="f req"><label for="model">Model number</label><input id="model" data-req autocapitalize="characters"></div>
+  <div class="f req"><label for="serial">Serial number</label><input id="serial" data-req autocapitalize="characters"></div>
+  <div class="row">
+    <div class="f"><label for="eqtype">Type</label>
+      <select id="eqtype">
+        <option value="">Choose</option>
+        <option>RTU — gas/electric</option>
+        <option>RTU — heat pump</option>
+        <option>Split system</option>
+        <option>Mini-split</option>
+        <option>CRAC / precision</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="f"><label for="tons">Tonnage</label><input id="tons" inputmode="decimal"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Incoming voltage</h2>
+  <p class="hint">Measured at the disconnect, line side.</p>
+  <div class="row3">
+    <div class="f req"><label for="l12">L1–L2</label><input id="l12" inputmode="decimal" data-req></div>
+    <div class="f"><label for="l23">L2–L3</label><input id="l23" inputmode="decimal"></div>
+    <div class="f"><label for="l13">L1–L3</label><input id="l13" inputmode="decimal"></div>
+  </div>
+  <div class="flag" id="vflag" hidden></div>
+  <div class="row">
+    <div class="f"><label for="nameplate">Nameplate volts</label>
+      <select id="nameplate"><option value="">Choose</option><option>115</option><option>208</option><option>230</option><option>240</option><option>460</option><option>480</option></select>
+    </div>
+    <div class="f"><label for="lowv">Control <span class="unit">24V</span></label><input id="lowv" inputmode="decimal"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Amp draw</h2>
+  <p class="hint">Everything running. Put nameplate ratings next to what you read.</p>
+
+  <h3>Compressor 1</h3>
+  <div class="row3">
+    <div class="f"><label for="c1a">L1</label><input id="c1a" inputmode="decimal"></div>
+    <div class="f"><label for="c1b">L2</label><input id="c1b" inputmode="decimal"></div>
+    <div class="f"><label for="c1c">L3</label><input id="c1c" inputmode="decimal"></div>
+  </div>
+  <div class="f"><label for="c1rla">Nameplate RLA</label><input id="c1rla" inputmode="decimal"></div>
+  <div class="flag" id="c1flag" hidden></div>
+
+  <button class="more" id="moreComp" aria-expanded="false">Add compressor 2</button>
+  <div id="comp2" hidden>
+    <h3>Compressor 2</h3>
+    <div class="row3">
+      <div class="f"><label for="c2a">L1</label><input id="c2a" inputmode="decimal"></div>
+      <div class="f"><label for="c2b">L2</label><input id="c2b" inputmode="decimal"></div>
+      <div class="f"><label for="c2c">L3</label><input id="c2c" inputmode="decimal"></div>
+    </div>
+    <div class="f"><label for="c2rla">Nameplate RLA</label><input id="c2rla" inputmode="decimal"></div>
+    <div class="flag" id="c2flag" hidden></div>
+  </div>
+
+  <h3>Fans and motors</h3>
+  <div class="row">
+    <div class="f"><label for="cf1">Condenser fan 1 <span class="unit">A</span></label><input id="cf1" inputmode="decimal"></div>
+    <div class="f"><label for="cf2">Condenser fan 2 <span class="unit">A</span></label><input id="cf2" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div class="f"><label for="blow">Blower <span class="unit">A</span></label><input id="blow" inputmode="decimal"></div>
+    <div class="f"><label for="blowfla">Blower FLA</label><input id="blowfla" inputmode="decimal"></div>
+  </div>
+  <div class="flag" id="bflag" hidden></div>
+
+  <h3>Capacitor and contactor</h3>
+  <div class="row">
+    <div class="f"><label for="capread">Measured <span class="unit">µF</span></label><input id="capread" inputmode="decimal"></div>
+    <div class="f"><label for="caprate">Rated <span class="unit">µF</span></label><input id="caprate" inputmode="decimal"></div>
+  </div>
+  <div class="flag" id="capflag" hidden></div>
+  <div class="f"><label for="contactor">Contactor</label>
+    <select id="contactor"><option value="">Choose</option><option>Good</option><option>Pitted</option><option>Welded</option><option>Chattering</option><option>Not pulling in</option></select>
+  </div>
+</section>
+
+<section>
+  <h2>Refrigerant</h2>
+  <div class="f"><label for="ref">Type</label>
+    <select id="ref"><option value="">Choose</option><option>R-410A</option><option>R-22</option><option>R-454B</option><option>R-32</option><option>R-407C</option><option>Other</option></select>
+  </div>
+  <div class="row">
+    <div class="f"><label for="suct">Suction <span class="unit">psig</span></label><input id="suct" inputmode="decimal"></div>
+    <div class="f"><label for="head">Head <span class="unit">psig</span></label><input id="head" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div class="f"><label for="slt">Suction line <span class="unit">°F</span></label><input id="slt" inputmode="decimal"></div>
+    <div class="f"><label for="llt">Liquid line <span class="unit">°F</span></label><input id="llt" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div class="f"><label for="sh">Superheat <span class="unit">°F</span></label><input id="sh" inputmode="decimal"></div>
+    <div class="f"><label for="sc">Subcool <span class="unit">°F</span></label><input id="sc" inputmode="decimal"></div>
+  </div>
+  <div class="f"><label for="meter">Metering device</label>
+    <select id="meter"><option value="">Choose</option><option>TXV</option><option>Fixed orifice</option><option>EEV</option><option>Unknown</option></select>
+  </div>
+  <div class="flag" id="shflag" hidden></div>
+
+  <h3>Air side</h3>
+  <div class="row">
+    <div class="f"><label for="rat">Return <span class="unit">°F</span></label><input id="rat" inputmode="decimal"></div>
+    <div class="f"><label for="sat">Supply <span class="unit">°F</span></label><input id="sat" inputmode="decimal"></div>
+  </div>
+  <div class="flag" id="splitflag" hidden></div>
+  <div class="row">
+    <div class="f"><label for="oat">Outdoor <span class="unit">°F</span></label><input id="oat" inputmode="decimal"></div>
+    <div class="f"><label for="filter">Filters</label>
+      <select id="filter"><option value="">Choose</option><option>Clean</option><option>Dirty</option><option>Missing</option></select>
+    </div>
+  </div>
+  <div class="f"><label for="coil">Coils</label>
+    <select id="coil"><option value="">Choose</option><option>Both clean</option><option>Condenser dirty</option><option>Evaporator dirty</option><option>Evaporator iced</option></select>
+  </div>
+</section>
+
+<section>
+  <h2>Heat side</h2>
+  <button class="more" id="moreHeat" aria-expanded="false">Open if this is a heat call</button>
+  <div id="heatblock" hidden>
+    <div class="f"><label for="heattype">Heat type</label>
+      <select id="heattype"><option value="">Choose</option><option>Gas</option><option>Electric strip</option><option>Heat pump</option></select>
+    </div>
+    <div class="f"><label for="lights">Ignition</label>
+      <select id="lights"><option value="">Choose</option><option>Lights and stays on</option><option>Lights then drops out</option><option>No ignition</option><option>No call at all</option></select>
+    </div>
+    <div class="row">
+      <div class="f"><label for="manifold">Manifold <span class="unit">in. w.c.</span></label><input id="manifold" inputmode="decimal"></div>
+      <div class="f"><label for="flame">Flame sense <span class="unit">µA</span></label><input id="flame" inputmode="decimal"></div>
+    </div>
+    <div class="f"><label for="safeties">Safety tripped</label>
+      <select id="safeties"><option value="">Choose</option><option>None</option><option>Rollout</option><option>High limit</option><option>Pressure switch</option></select>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The call</h2>
+  <div class="f req"><label for="problem">What's wrong and what the unit is doing</label><textarea id="problem" data-req></textarea></div>
+  <div class="f"><label for="fault">Fault or flash code at the board</label><input id="fault" placeholder="None if there isn't one"></div>
+  <div class="f req"><label for="tried">What you've already checked or tried</label><textarea id="tried" data-req></textarea></div>
+  <div class="f"><label for="guess">Best guess at the failure</label><textarea id="guess"></textarea></div>
+  <div class="f req"><label for="need">What you need</label>
+    <select id="need" data-req>
+      <option value="">Choose</option>
+      <option>Diagnostic help</option>
+      <option>Parts pricing or sourcing</option>
+      <option>Authorization to proceed</option>
+      <option>Second tech on site</option>
+      <option>Repair vs. replace call</option>
+    </select>
+  </div>
+  <div class="row">
+    <div class="f req"><label for="wo">Work order #</label><input id="wo" data-req></div>
+    <div class="f req"><label for="tech">Your name</label><input id="tech" data-req></div>
+  </div>
+</section>
+
+</div>
+
+<div class="bar">
+  <div class="inner">
+    <div class="status wait" id="status"><b id="statusLine"></b><span id="statusSub"></span></div>
+    <button id="copy" disabled>Copy</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  function el(id){ return document.getElementById(id); }
+  function v(id){ var e = el(id); return e ? e.value.trim() : ""; }
+  function n(id){ var x = parseFloat(v(id)); return isNaN(x) ? null : x; }
+  function avg(a){ return a.reduce(function(s,x){return s+x;},0)/a.length; }
+
+  function expand(btnId, boxId){
+    var b = el(btnId);
+    b.addEventListener("click", function(){
+      b.setAttribute("aria-expanded","true");
+      el(boxId).hidden = false;
+      check();
+    });
+  }
+  expand("moreComp","comp2");
+  expand("moreHeat","heatblock");
+
+  function flag(id, text, bad){
+    var f = el(id);
+    if (!text){ f.hidden = true; f.textContent = ""; return; }
+    f.hidden = false;
+    f.textContent = text;
+    f.className = bad ? "flag bad" : "flag";
+  }
+
+  function legs(a,b,c){
+    return [n(a),n(b),n(c)].filter(function(x){ return x !== null; });
+  }
+
+  function voltage(){
+    var r = legs("l12","l23","l13"), np = n("nameplate"), msgs = [];
+    if (!r.length){ flag("vflag",""); return; }
+    if (r.length > 1){
+      var imb = (Math.max.apply(null,r) - Math.min.apply(null,r)) / avg(r) * 100;
+      if (imb > 2) msgs.push("Phase imbalance " + imb.toFixed(1) + "% — over 2% is a problem");
+    }
+    if (np){
+      var off = (avg(r) - np) / np * 100;
+      if (Math.abs(off) > 10) msgs.push("Supply " + off.toFixed(0) + "% off nameplate");
+    }
+    flag("vflag", msgs.join(" · "), msgs.length > 0);
+  }
+
+  function amps(pre, flagId, rlaId){
+    var r = legs(pre+"a",pre+"b",pre+"c"), rla = n(rlaId), msgs = [];
+    if (!r.length){ flag(flagId,""); return; }
+    if (r.length > 1){
+      var imb = (Math.max.apply(null,r) - Math.min.apply(null,r)) / avg(r) * 100;
+      if (imb > 10) msgs.push("Leg imbalance " + imb.toFixed(0) + "%");
+    }
+    if (rla){
+      var mx = Math.max.apply(null,r);
+      if (mx > rla) msgs.push("Drawing " + (mx/rla*100).toFixed(0) + "% of RLA");
+      else if (mx < rla * 0.4) msgs.push("Well under RLA — check loading or valves");
+    }
+    flag(flagId, msgs.join(" · "), msgs.length > 0);
+  }
+
+  function blower(){
+    var a = n("blow"), f = n("blowfla");
+    if (a === null || f === null){ flag("bflag",""); return; }
+    if (a > f) flag("bflag","Blower at " + (a/f*100).toFixed(0) + "% of FLA", true);
+    else flag("bflag","");
+  }
+
+  function cap(){
+    var m = n("capread"), r = n("caprate");
+    if (m === null || r === null || r === 0){ flag("capflag",""); return; }
+    var off = (m - r) / r * 100;
+    if (Math.abs(off) > 6) flag("capflag","Capacitor " + off.toFixed(0) + "% off rating — out of tolerance", true);
+    else flag("capflag","Capacitor within tolerance", false);
+  }
+
+  function superheat(){
+    var sh = n("sh"), m = v("meter");
+    if (sh === null || !m || m === "Unknown"){ flag("shflag",""); return; }
+    if (m === "TXV" || m === "EEV"){
+      if (sh < 5) flag("shflag","Low superheat on a " + m + " — flooding risk", true);
+      else if (sh > 15) flag("shflag","High superheat on a " + m + " — starving or low charge", true);
+      else flag("shflag","Superheat in range for a " + m, false);
+    } else {
+      if (sh < 5) flag("shflag","Very low superheat — flooding risk", true);
+      else if (sh > 25) flag("shflag","High superheat — low charge or airflow", true);
+      else flag("shflag","");
+    }
+  }
+
+  function tempsplit(){
+    var r = n("rat"), s = n("sat");
+    if (r === null || s === null){ flag("splitflag",""); return; }
+    var d = r - s;
+    var note = d < 14 ? " — low, normal is about 16–22" : (d > 24 ? " — high, check airflow" : " — in range");
+    flag("splitflag","Split " + d.toFixed(1) + "°F" + note, d < 14 || d > 24);
+  }
+
+  function missing(){
+    var out = [];
+    document.querySelectorAll("[data-req]").forEach(function(e){ if (!e.value.trim()) out.push(e); });
+    return out;
+  }
+
+  function check(){
+    voltage();
+    amps("c1","c1flag","c1rla");
+    amps("c2","c2flag","c2rla");
+    blower(); cap(); superheat(); tempsplit();
+    var c = missing().length, s = el("status"), b = el("copy");
+    if (c === 0){
+      s.className = "status go";
+      el("statusLine").textContent = "Ready";
+      el("statusSub").textContent = "Copy it and make the call";
+      b.disabled = false;
+    } else {
+      s.className = "status wait";
+      el("statusLine").textContent = c + (c === 1 ? " field left" : " fields left");
+      el("statusSub").textContent = "Finish the dotted fields";
+      b.disabled = true;
+    }
+  }
+
+  function L(label, val){ return val ? label + ": " + val + "\n" : ""; }
+  function legText(pre){
+    var r = [v(pre+"a"), v(pre+"b"), v(pre+"c")].filter(Boolean);
+    return r.length ? r.join(" / ") + " A" : "";
+  }
+
+  function build(){
+    var t = "PRE-CALL CHECKLIST\n";
+    t += "WO " + v("wo") + " — " + v("tech") + "\n" + new Date().toLocaleString() + "\n\n";
+
+    t += "UNIT\n";
+    t += "Model: " + v("model") + "\nSerial: " + v("serial") + "\n";
+    t += L("Type", v("eqtype")) + L("Tons", v("tons"));
+
+    t += "\nVOLTAGE AT DISCONNECT\n";
+    var vl = [v("l12"), v("l23"), v("l13")].filter(Boolean);
+    t += L("Line", vl.length ? vl.join(" / ") + " V" : "");
+    t += L("Nameplate", v("nameplate"));
+    t += L("Control", v("lowv"));
+    if (!el("vflag").hidden) t += "! " + el("vflag").textContent + "\n";
+
+    t += "\nAMPS\n";
+    t += L("Compressor 1", legText("c1")) + L("  RLA", v("c1rla"));
+    if (!el("c1flag").hidden) t += "  ! " + el("c1flag").textContent + "\n";
+    if (!el("comp2").hidden){
+      t += L("Compressor 2", legText("c2")) + L("  RLA", v("c2rla"));
+      if (!el("c2flag").hidden) t += "  ! " + el("c2flag").textContent + "\n";
+    }
+    t += L("Condenser fan 1", v("cf1") ? v("cf1") + " A" : "");
+    t += L("Condenser fan 2", v("cf2") ? v("cf2") + " A" : "");
+    t += L("Blower", v("blow") ? v("blow") + " A" + (v("blowfla") ? " (FLA " + v("blowfla") + ")" : "") : "");
+    if (!el("bflag").hidden) t += "  ! " + el("bflag").textContent + "\n";
+    t += L("Capacitor", v("capread") ? v("capread") + " µF measured, " + v("caprate") + " rated" : "");
+    if (!el("capflag").hidden) t += "  " + el("capflag").textContent + "\n";
+    t += L("Contactor", v("contactor"));
+
+    t += "\nREFRIGERANT\n";
+    t += L("Type", v("ref"));
+    t += L("Suction / head", (v("suct") || v("head")) ? v("suct") + " / " + v("head") + " psig" : "");
+    t += L("Line temps", (v("slt") || v("llt")) ? "suction " + v("slt") + "°F, liquid " + v("llt") + "°F" : "");
+    t += L("Superheat", v("sh")) + L("Subcool", v("sc")) + L("Metering", v("meter"));
+    if (!el("shflag").hidden) t += "! " + el("shflag").textContent + "\n";
+
+    t += "\nAIR SIDE\n";
+    t += L("Return / supply", (v("rat") || v("sat")) ? v("rat") + "°F / " + v("sat") + "°F" : "");
+    if (!el("splitflag").hidden) t += "  " + el("splitflag").textContent + "\n";
+    t += L("Outdoor", v("oat")) + L("Filters", v("filter")) + L("Coils", v("coil"));
+
+    if (!el("heatblock").hidden){
+      t += "\nHEAT\n";
+      t += L("Type", v("heattype")) + L("Ignition", v("lights"));
+      t += L("Manifold", v("manifold")) + L("Flame sense", v("flame")) + L("Safeties", v("safeties"));
+    }
+
+    t += "\nPROBLEM\n" + v("problem") + "\n";
+    t += L("Fault code", v("fault"));
+    t += "\nALREADY CHECKED\n" + v("tried") + "\n";
+    if (v("guess")) t += "\nBEST GUESS\n" + v("guess") + "\n";
+    t += "\nNEEDS: " + v("need") + "\n";
+    return t;
+  }
+
+  el("copy").addEventListener("click", function(){
+    var btn = this, text = build();
+    function done(){ btn.textContent = "Copied"; setTimeout(function(){ btn.textContent = "Copy"; }, 2000); }
+    function fallback(){
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch(e){ btn.textContent = "Copy failed"; }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  });
+
+  document.addEventListener("input", check);
+  document.addEventListener("change", check);
+  check();
+})();
+</script>
+</body>
+</html>
