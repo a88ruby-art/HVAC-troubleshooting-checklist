@@ -1,0 +1,20 @@
+{
+  "name": "precall-ai-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Holds the team's Claude API key and runs the Pre-Call AI check for techs with a team code.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260927.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.141.0"
+  }
+}
