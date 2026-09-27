@@ -1,0 +1,20 @@
+name = "precall-ai"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Where the app is served from. Add more, comma-separated, if you host it somewhere else too.
+ALLOWED_ORIGINS = "https://a88ruby-art.github.io"
+
+# Caps each tech at 10 AI checks a minute.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[observability]
+enabled = true
+
+# Secrets are set in the Cloudflare dashboard or with `npx wrangler secret put <NAME>`, never here:
+#   ANTHROPIC_API_KEY  your Claude API key
+#   TEAM_CODES         name:code pairs, comma-separated, e.g. sam:river-cable-42,jo:amber-flute-17

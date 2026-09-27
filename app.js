@@ -436,46 +436,24 @@
 
   /* ---------- AI check (Claude) ---------- */
 
-  // The official Anthropic SDK, bundled into vendor/ so it loads without a CDN.
-  var sdkPromise = null;
+  // The official Anthropic SDK (bundled into vendor/) and the prompt shared with the team server.
+  var sdkPromise = null, promptPromise = null;
   function loadSDK(){
     if (!sdkPromise) sdkPromise = import("./vendor/anthropic-sdk.js").then(function(m){ return m.default; }, function(e){ sdkPromise = null; throw e; });
     return sdkPromise;
   }
+  function loadPrompt(){
+    if (!promptPromise) promptPromise = import("./ai-prompt.js").catch(function(e){ promptPromise = null; throw e; });
+    return promptPromise;
+  }
 
-  var AI_MODEL = "claude-opus-5";
-  var AI_SYSTEM = [
-    "You help HVAC field technicians diagnose commercial and residential equipment from readings they took at the unit.",
-    "You will get the readings from a pre-call checklist: unit details, line voltage, amp draw, capacitor and contactor, refrigerant pressures and line temperatures, superheat and subcool, air-side temperatures, heat-side checks, the symptom, and what the tech already tried. Automatic flags from simple rule checks are included too.",
-    "Work only from the readings given. Where it helps, derive values yourself (for example saturation temperatures from the pressures for the listed refrigerant, then superheat or subcool, or the temperature split) and say you derived them. Never invent a reading that was not taken. If the readings don't support a conclusion, say so and name the reading that would settle it.",
-    "Rank the likely causes, most likely first, each with a confidence and the specific readings that point to it. Next checks should be concrete things the tech can do at the unit now, in order, with what a good or bad result looks like.",
-    "Include a safety note only when the readings or the fix involve a real hazard (for example a welded contactor, rollout or high-limit trips, gas pressure, high amp draw, refrigerant recovery). Keep every field short and plain; the tech is reading this on a phone at the unit."
-  ].join("\n\n");
-  var AI_SCHEMA = {
-    type: "object",
-    additionalProperties: false,
-    required: ["summary", "likely_causes", "next_checks", "safety_notes", "missing_readings"],
-    properties: {
-      summary: { type: "string", description: "One or two sentences on what the readings say overall." },
-      likely_causes: { type: "array", items: {
-        type: "object", additionalProperties: false, required: ["cause", "confidence", "evidence"],
-        properties: {
-          cause: { type: "string" },
-          confidence: { type: "string", enum: ["high", "medium", "low"] },
-          evidence: { type: "string", description: "The readings that point to this cause." }
-        }
-      }},
-      next_checks: { type: "array", items: {
-        type: "object", additionalProperties: false, required: ["check", "expect"],
-        properties: {
-          check: { type: "string" },
-          expect: { type: "string", description: "What a good vs. bad result looks like." }
-        }
-      }},
-      safety_notes: { type: "array", items: { type: "string" } },
-      missing_readings: { type: "array", items: { type: "string" }, description: "Readings that were not taken and would most help." }
-    }
-  };
+  var AI_SERVER = String((window.PRECALL_CONFIG || {}).aiServer || "").trim().replace(/\/+$/, "");
+  // "team": through the team server with a team code. "key": straight to Claude with the tech's own key.
+  function aiMode(){
+    if (AI_SERVER && db.settings.teamCode) return "team";
+    if (db.settings.apiKey) return "key";
+    return null;
+  }
 
   // Readings only: the work order number and tech's name are left out.
   function aiInput(c){
@@ -492,28 +470,46 @@
 
   var aiRunning = {};
   function runAI(c){
-    var key = db.settings.apiKey;
-    if (!key || aiRunning[c.id]) return;
+    var mode = aiMode();
+    if (!mode || aiRunning[c.id]) return;
     aiRunning[c.id] = true; c.aiError = null; rerenderReview(c);
     var input = aiInput(c);
-    loadSDK().then(function(Anthropic){
-      var client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
-      return client.beta.messages.create({
-        model: AI_MODEL,
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        system: AI_SYSTEM,
-        messages: [{ role: "user", content: input }],
-        output_config: { format: { type: "json_schema", schema: AI_SCHEMA } }
-      }).then(function(res){
-        if (res.stop_reason === "refusal") throw new Error("Claude declined to answer this one.");
-        if (res.stop_reason === "max_tokens") throw new Error("The answer was cut off. Try again.");
-        var text = res.content.filter(function(b){ return b.type === "text"; }).map(function(b){ return b.text; }).join("");
-        var result = JSON.parse(text);
-        c.ai = { at: Date.now(), model: res.model, readings: input, result: result };
-        saveNow();
+    (mode === "team" ? askTeamServer(input) : askClaude(input)).then(function(out){
+      c.ai = { at: Date.now(), model: out.model, readings: input, result: out.result };
+      saveNow();
+    }).catch(function(e){
+      c.aiError = e && e.message ? e.message : "Something went wrong. Try again.";
+      if (!navigator.onLine) c.aiError = "No connection. The AI check needs signal.";
+    }).then(function(){
+      delete aiRunning[c.id];
+      rerenderReview(c);
+    });
+  }
+
+  function askTeamServer(input){
+    var ctl = window.AbortController ? new AbortController() : null;
+    var timer = ctl && setTimeout(function(){ ctl.abort(); }, 150000);
+    return fetch(AI_SERVER + "/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + db.settings.teamCode },
+      body: JSON.stringify({ readings: input }),
+      signal: ctl ? ctl.signal : undefined
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(body){
+        if (res.ok && body.result) return { result: body.result, model: body.model };
+        throw new Error(body.message || "The AI server returned an error (" + res.status + "). Try again.");
+      });
+    }, function(){
+      throw new Error("Couldn't reach the AI server. Check your signal and try again.");
+    }).finally(function(){ if (timer) clearTimeout(timer); });
+  }
+
+  function askClaude(input){
+    return Promise.all([loadSDK(), loadPrompt()]).then(function(mods){
+      var Anthropic = mods[0], P = mods[1];
+      var client = new Anthropic({ apiKey: db.settings.apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 });
+      return client.beta.messages.create(P.buildRequest(input)).then(function(res){
+        return { result: P.readResult(res), model: res.model };
       }, function(e){
         if (e instanceof Anthropic.AuthenticationError) throw new Error("Your API key wasn't accepted. Check it in Profile.");
         if (e instanceof Anthropic.PermissionDeniedError) throw new Error("This API key isn't allowed to use Claude. Check it in Profile.");
@@ -522,20 +518,14 @@
         if (e instanceof Anthropic.APIError) throw new Error("Claude returned an error" + (e.status ? " (" + e.status + ")" : "") + ". Try again.");
         throw e;
       });
-    }).catch(function(e){
-      c.aiError = e && e.message && !/JSON/.test(e.message) ? e.message : "Something went wrong. Try again.";
-      if (!navigator.onLine) c.aiError = "No connection. The AI check needs signal.";
-    }).then(function(){
-      delete aiRunning[c.id];
-      rerenderReview(c);
     });
   }
   function rerenderReview(c){ if (location.hash === "#/call/" + c.id + "/review") { var y = window.scrollY; viewReview(c); window.scrollTo(0, y); } }
 
   function aiPanel(c){
     var h = '<section class="panel ai" aria-live="polite"><div class="ai-head">' + icon("spark") + '<h2 class="cond">AI check</h2></div>';
-    if (!db.settings.apiKey){
-      return h + '<div class="sub">Claude can read all your readings and suggest likely causes and what to check next. Add a Claude API key in Profile to turn it on.</div>' +
+    if (!aiMode()){
+      return h + '<div class="sub">Claude can read all your readings and suggest likely causes and what to check next. ' + (AI_SERVER ? 'Add your team code in Profile to turn it on.' : 'Add a Claude API key in Profile to turn it on.') + '</div>' +
         '<a class="link" style="padding:0;align-self:flex-start" href="#/profile">Set it up</a></section>';
     }
     var busy = !!aiRunning[c.id], fresh = aiFresh(c);
@@ -656,6 +646,11 @@
   var installEvt = null;
   window.addEventListener("beforeinstallprompt", function(e){ e.preventDefault(); installEvt = e; if (location.hash === "#/profile") route(); });
 
+  function keyField(){
+    return '<div class="f"><label for="me-key">Claude API key</label><input id="me-key" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-ant-…" value="' + esc(db.settings.apiKey || "") + '"></div>' +
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Get one at console.anthropic.com. Each check is billed to that account, usually a few cents. The key is saved on this phone only, so don\'t use a shared phone.</p>';
+  }
+
   function viewProfile(){
     var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
     var h = '<header class="hero"><div><div class="eyebrow">Profile</div><h1>You</h1><p>Saved on this phone only.</p></div></header><form class="content" onsubmit="return false">' +
@@ -666,8 +661,11 @@
       '<div class="f"><label for="me-smsto">Mobile number</label><input id="me-smsto" type="tel" inputmode="tel" autocomplete="off" value="' + esc(db.settings.smsTo || "") + '"></div></div>' +
       '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Optional. Text it fills this in. Leave it blank to pick someone each time.</p>' +
       '<h2>AI check</h2>' +
-      '<div class="f"><label for="me-key">Claude API key</label><input id="me-key" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-ant-…" value="' + esc(db.settings.apiKey || "") + '"></div>' +
-      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Get one at console.anthropic.com. Each check is billed to that account, usually a few cents. The key is saved on this phone only, so don\'t use a shared phone.</p>';
+      (AI_SERVER
+        ? '<div class="f"><label for="me-code">Team code</label><input id="me-code" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" value="' + esc(db.settings.teamCode || "") + '"></div>' +
+          '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Your office gives you this. It turns on the AI check.</p>' +
+          '<details' + (db.settings.apiKey && !db.settings.teamCode ? ' open' : '') + '><summary class="sub" style="color:var(--muted);font-size:15px;min-height:44px;display:flex;align-items:center;cursor:pointer">Use your own Claude API key instead</summary>' + keyField() + '</details>'
+        : keyField());
     if (!standalone){
       h += '<h2>Put it on your home screen</h2><div class="panel">';
       if (installEvt) h += '<button type="button" class="primary" id="install">Install Pre-Call</button>';
@@ -682,6 +680,7 @@
     el("me-smsname").addEventListener("input", function(){ db.settings.smsName = this.value.trim(); save(); });
     el("me-smsto").addEventListener("input", function(){ db.settings.smsTo = this.value.trim(); save(); });
     el("me-key").addEventListener("input", function(){ db.settings.apiKey = this.value.trim(); save(); });
+    if (el("me-code")) el("me-code").addEventListener("input", function(){ db.settings.teamCode = this.value.trim(); save(); });
     if (el("install")) el("install").addEventListener("click", function(){ installEvt.prompt(); installEvt = null; });
     el("wipe").addEventListener("click", function(){
       if (!db.calls.length) return;

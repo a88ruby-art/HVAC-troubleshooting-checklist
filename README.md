@@ -10,14 +10,16 @@ A phone app for HVAC techs: work through the checks at the unit, then copy a cle
 - **AI check** on the review screen: Claude reads all the readings and suggests likely causes (with the readings behind each), what to check next, safety notes, and which missing readings would help. Suggestions only; verify before acting.
 - **Works offline** once it has been opened once, and installs to the home screen. (The AI check needs signal.)
 
-Everything stays in the browser on that phone (`localStorage`). The only thing sent anywhere is the AI check: when you tap it, the readings (not your name or the work order number) go to the Claude API.
+Everything stays in the browser on that phone (`localStorage`). The only thing sent anywhere is the AI check: when you tap it, the readings (not your name or the work order number) go to Claude, through your team server if you set one up.
 
 ## Turning on the AI check
 
-1. Create an API key at [console.anthropic.com](https://console.anthropic.com) and add billing. Each check is billed to that account, usually a few cents.
-2. In the app, open **Profile** and paste the key into **Claude API key**.
+There are two ways:
 
-The key is saved on that phone only and the app calls Claude directly from the phone, so only put your key on phones you control. To give a whole team the AI check without handing out the key, put a small server (for example a Cloudflare Worker) in front of the API that holds the key.
+- **For a team (recommended):** deploy the small server in [`server/`](server/README.md). It holds your Claude API key, gives each tech their own team code, and caps how often each tech can run checks. Then put the server's address in [`config.js`](config.js). Techs enter their team code in **Profile**.
+- **Just for you:** create an API key at [console.anthropic.com](https://console.anthropic.com) and paste it into **Profile → Claude API key**. The key is saved on that phone and the phone calls Claude directly, so only do this on a phone you control.
+
+Each check is billed to the Claude account, usually a few cents. Set a monthly spend limit in the Anthropic Console.
 
 ## Run it
 
@@ -44,6 +46,9 @@ Turn on **GitHub Pages** for this repository (Settings → Pages → Deploy from
 | `app.js` | Checklist fields, flag rules, screens, saving |
 | `app.css` | Styles |
 | `sw.js` | Service worker for offline use |
+| `config.js` | Team settings: the AI server's address |
+| `ai-prompt.js` | What the AI check asks Claude, shared by the app and the server |
+| `server/` | The team AI server (Cloudflare Worker) |
 | `vendor/anthropic-sdk.js` | Anthropic's official JavaScript SDK (v0.128.0), bundled for the browser, MIT licensed |
 | `manifest.webmanifest`, `icons/` | Home screen install |
 | `pre-call-checklist.html` | The original single-page checklist |
