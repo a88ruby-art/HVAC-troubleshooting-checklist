@@ -147,6 +147,8 @@
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
     share:'<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>',
+    text:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+    spark:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
     calls:'<path d="M9 5h10M9 12h10M9 19h10M4 5h.01M4 12h.01M4 19h.01"/>',
     units:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/>',
     me:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'
@@ -289,6 +291,7 @@
     if (v("fault")) t += "Fault code: " + v("fault") + "\n";
     t += "\nALREADY CHECKED\n" + v("tried") + "\n";
     if (v("guess")) t += "\nBEST GUESS\n" + v("guess") + "\n";
+    if (aiFresh(c)) t += "\nAI SUGGESTIONS (unverified)\n" + c.ai.result.likely_causes.map(function(x){ return "- " + x.cause + " (" + x.confidence + ")"; }).join("\n") + "\n";
     t += "\nNEEDS: " + v("need") + "\n";
     return t;
   }
@@ -327,7 +330,7 @@
       h += '<h2>Sent</h2><div class="list">' + sent.slice(0, 30).map(function(c){
         return '<a href="#/call/' + c.id + '/review">' + icon("check",' style="color:var(--good)"') +
           '<div class="grow"><b>' + esc(callTitle(c)) + '</b><div class="sub">' + esc(c.v.eqtype || c.v.model || "") + '</div></div>' +
-          '<span class="sub">Copied ' + esc(when(c.sent)) + '</span></a>';
+          '<span class="sub">' + esc(sentLabel(c)) + '</span></a>';
       }).join("") + '</div>';
     }
     h += '</div>' + tabs("calls");
@@ -430,6 +433,135 @@
     }
   }
 
+
+  /* ---------- AI check (Claude) ---------- */
+
+  // The official Anthropic SDK, bundled into vendor/ so it loads without a CDN.
+  var sdkPromise = null;
+  function loadSDK(){
+    if (!sdkPromise) sdkPromise = import("./vendor/anthropic-sdk.js").then(function(m){ return m.default; }, function(e){ sdkPromise = null; throw e; });
+    return sdkPromise;
+  }
+
+  var AI_MODEL = "claude-opus-5";
+  var AI_SYSTEM = [
+    "You help HVAC field technicians diagnose commercial and residential equipment from readings they took at the unit.",
+    "You will get the readings from a pre-call checklist: unit details, line voltage, amp draw, capacitor and contactor, refrigerant pressures and line temperatures, superheat and subcool, air-side temperatures, heat-side checks, the symptom, and what the tech already tried. Automatic flags from simple rule checks are included too.",
+    "Work only from the readings given. Where it helps, derive values yourself (for example saturation temperatures from the pressures for the listed refrigerant, then superheat or subcool, or the temperature split) and say you derived them. Never invent a reading that was not taken. If the readings don't support a conclusion, say so and name the reading that would settle it.",
+    "Rank the likely causes, most likely first, each with a confidence and the specific readings that point to it. Next checks should be concrete things the tech can do at the unit now, in order, with what a good or bad result looks like.",
+    "Include a safety note only when the readings or the fix involve a real hazard (for example a welded contactor, rollout or high-limit trips, gas pressure, high amp draw, refrigerant recovery). Keep every field short and plain; the tech is reading this on a phone at the unit."
+  ].join("\n\n");
+  var AI_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary", "likely_causes", "next_checks", "safety_notes", "missing_readings"],
+    properties: {
+      summary: { type: "string", description: "One or two sentences on what the readings say overall." },
+      likely_causes: { type: "array", items: {
+        type: "object", additionalProperties: false, required: ["cause", "confidence", "evidence"],
+        properties: {
+          cause: { type: "string" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+          evidence: { type: "string", description: "The readings that point to this cause." }
+        }
+      }},
+      next_checks: { type: "array", items: {
+        type: "object", additionalProperties: false, required: ["check", "expect"],
+        properties: {
+          check: { type: "string" },
+          expect: { type: "string", description: "What a good vs. bad result looks like." }
+        }
+      }},
+      safety_notes: { type: "array", items: { type: "string" } },
+      missing_readings: { type: "array", items: { type: "string" }, description: "Readings that were not taken and would most help." }
+    }
+  };
+
+  // Readings only: the work order number and tech's name are left out.
+  function aiInput(c){
+    var t = "Readings from the pre-call checklist:\n";
+    var flags = badFlags(c);
+    sections(c).forEach(function(s){
+      t += "\n" + s.name + "\n" + (s.lines.length ? s.lines.join("\n") : (s.step === 5 ? "Not a heat call" : "Not taken")) + "\n";
+    });
+    t += "\nAUTOMATIC FLAGS\n" + (flags.length ? flags.join("\n") : "None");
+    return t;
+  }
+  function hasReadings(c){ return Object.keys(c.v).some(function(k){ return k !== "tech" && k !== "wo" && String(c.v[k] || "").trim(); }); }
+  function aiFresh(c){ return !!(c.ai && c.ai.result && c.ai.readings === aiInput(c)); }
+
+  var aiRunning = {};
+  function runAI(c){
+    var key = db.settings.apiKey;
+    if (!key || aiRunning[c.id]) return;
+    aiRunning[c.id] = true; c.aiError = null; rerenderReview(c);
+    var input = aiInput(c);
+    loadSDK().then(function(Anthropic){
+      var client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
+      return client.beta.messages.create({
+        model: AI_MODEL,
+        max_tokens: 16000,
+        thinking: { type: "adaptive" },
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        system: AI_SYSTEM,
+        messages: [{ role: "user", content: input }],
+        output_config: { format: { type: "json_schema", schema: AI_SCHEMA } }
+      }).then(function(res){
+        if (res.stop_reason === "refusal") throw new Error("Claude declined to answer this one.");
+        if (res.stop_reason === "max_tokens") throw new Error("The answer was cut off. Try again.");
+        var text = res.content.filter(function(b){ return b.type === "text"; }).map(function(b){ return b.text; }).join("");
+        var result = JSON.parse(text);
+        c.ai = { at: Date.now(), model: res.model, readings: input, result: result };
+        saveNow();
+      }, function(e){
+        if (e instanceof Anthropic.AuthenticationError) throw new Error("Your API key wasn't accepted. Check it in Profile.");
+        if (e instanceof Anthropic.PermissionDeniedError) throw new Error("This API key isn't allowed to use Claude. Check it in Profile.");
+        if (e instanceof Anthropic.RateLimitError) throw new Error("Too many requests right now. Wait a minute and try again.");
+        if (e instanceof Anthropic.APIConnectionError) throw new Error("Couldn't reach Claude. Check your signal and try again.");
+        if (e instanceof Anthropic.APIError) throw new Error("Claude returned an error" + (e.status ? " (" + e.status + ")" : "") + ". Try again.");
+        throw e;
+      });
+    }).catch(function(e){
+      c.aiError = e && e.message && !/JSON/.test(e.message) ? e.message : "Something went wrong. Try again.";
+      if (!navigator.onLine) c.aiError = "No connection. The AI check needs signal.";
+    }).then(function(){
+      delete aiRunning[c.id];
+      rerenderReview(c);
+    });
+  }
+  function rerenderReview(c){ if (location.hash === "#/call/" + c.id + "/review") { var y = window.scrollY; viewReview(c); window.scrollTo(0, y); } }
+
+  function aiPanel(c){
+    var h = '<section class="panel ai" aria-live="polite"><div class="ai-head">' + icon("spark") + '<h2 class="cond">AI check</h2></div>';
+    if (!db.settings.apiKey){
+      return h + '<div class="sub">Claude can read all your readings and suggest likely causes and what to check next. Add a Claude API key in Profile to turn it on.</div>' +
+        '<a class="link" style="padding:0;align-self:flex-start" href="#/profile">Set it up</a></section>';
+    }
+    var busy = !!aiRunning[c.id], fresh = aiFresh(c);
+    if (c.aiError && !busy) h += '<div class="flag bad" style="margin:0">' + icon("warn") + '<span>' + esc(c.aiError) + '</span></div>';
+    if (c.ai && c.ai.result && !busy){
+      var r = c.ai.result;
+      if (!fresh) h += '<div class="flag" style="margin:0">' + icon("info") + '<span>Readings changed since this check. Run it again.</span></div>';
+      h += '<p class="ai-sum">' + esc(r.summary) + '</p>';
+      if (r.safety_notes && r.safety_notes.length) h += '<div class="ai-block safety"><h3>Safety</h3>' + r.safety_notes.map(function(x){ return '<div class="fl">' + icon("warn") + '<span>' + esc(x) + '</span></div>'; }).join("") + '</div>';
+      if (r.likely_causes.length) h += '<div class="ai-block"><h3>Likely causes</h3><ol>' + r.likely_causes.map(function(x){
+        return '<li><div class="ai-row"><b>' + esc(x.cause) + '</b><span class="chip conf-' + esc(x.confidence) + '">' + esc(x.confidence) + '</span></div><div class="sub">' + esc(x.evidence) + '</div></li>';
+      }).join("") + '</ol></div>';
+      if (r.next_checks.length) h += '<div class="ai-block"><h3>Check next</h3><ol>' + r.next_checks.map(function(x){
+        return '<li><b>' + esc(x.check) + '</b><div class="sub">' + esc(x.expect) + '</div></li>';
+      }).join("") + '</ol></div>';
+      if (r.missing_readings && r.missing_readings.length) h += '<div class="ai-block"><h3>Readings that would help</h3><ul>' + r.missing_readings.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join("") + '</ul></div>';
+      h += '<div class="sub ai-foot">Suggestions only, from Claude at ' + esc(when(c.ai.at)) + '. Verify before you act on them.' + (fresh ? ' Likely causes go out with your text.' : '') + '</div>';
+    } else if (!busy){
+      h += '<div class="sub">Sends the readings (not your name or the work order) to Claude and gets back likely causes and what to check next.</div>';
+    }
+    if (busy) h += '<div class="ai-busy"><span class="spin" aria-hidden="true"></span>Reading the numbers. This can take up to a minute.</div>';
+    else h += '<button type="button" class="aibtn" id="runAI"' + (hasReadings(c) ? '' : ' disabled') + '>' + icon("spark") + (c.ai ? 'Run it again' : 'Run AI check') + '</button>' +
+      (hasReadings(c) ? '' : '<div class="sub">Enter some readings first.</div>');
+    return h + '</section>';
+  }
+
   function viewReview(c){
     current = null;
     if ((c.seen || 0) < STEPS.length - 1) { c.seen = STEPS.length - 1; save(); }
@@ -447,32 +579,43 @@
     if (flags.length){
       h += '<section class="panel"><h2 class="cond">Lead with these</h2>' + flags.map(function(f){ return '<div class="fl">' + icon("warn") + '<span>' + esc(f) + '</span></div>'; }).join("") + '</section>';
     }
+    h += aiPanel(c);
     h += '<div class="list sum">' + sections(c).map(function(s){
       var body = s.lines.length ? s.lines.map(function(l){ return l.trim(); }).join("\n") : (s.step === 5 ? "Not a heat call" : "Nothing entered");
       return '<div><div class="grow"><div class="k">' + esc(STEPS[s.step].title) + '</div><div class="v">' + esc(body) + '</div></div>' +
         '<a class="link" href="#/call/' + c.id + '/' + s.step + '" aria-label="Edit ' + esc(STEPS[s.step].title) + '">Edit</a></div>';
     }).join("") + '</div>';
-    if (c.sent) h += '<p class="sub" style="text-align:center;color:var(--muted);margin:4px 0 0">Copied ' + esc(when(c.sent)) + '</p>';
+    if (c.sent) h += '<p class="sub" style="text-align:center;color:var(--muted);margin:4px 0 0">' + esc(sentLabel(c)) + '</p>';
     h += '<button type="button" class="danger" id="del">Delete this pre-call</button></div>';
-    var canShare = !!navigator.share;
+    var canShare = !!navigator.share, off = miss.length ? ' disabled' : '';
+    var to = db.settings.smsTo || "";
     h += '<div class="bar"><div class="inner">' +
-      (canShare ? '<button type="button" class="ghost" id="share" aria-label="Share"' + (miss.length ? ' disabled' : '') + '>' + icon("share") + '</button>' : '') +
-      '<button type="button" class="primary grow" id="copy"' + (miss.length ? ' disabled' : '') + '>' + icon("copy") + 'Copy for the call</button></div></div>';
+      (canShare ? '<button type="button" class="ghost" id="share" aria-label="Share"' + off + '>' + icon("share") + '</button>' : '') +
+      '<button type="button" class="ghost" id="copy" aria-label="Copy"' + off + '>' + icon("copy") + '</button>' +
+      (miss.length
+        ? '<a class="primary grow" aria-disabled="true">' + icon("text") + 'Text it</a>'
+        : '<a class="primary grow" id="sms" href="' + esc(smsHref(to, buildText(c))) + '">' + icon("text") + (to ? 'Text ' + esc(db.settings.smsName || "it") : 'Text it') + '</a>') +
+      '</div></div>';
     app.className = "wrap"; app.innerHTML = h;
 
+    if (el("sms")) el("sms").addEventListener("click", function(){ markSent(c, "Texted"); });
+    if (el("runAI")) el("runAI").addEventListener("click", function(){ runAI(c); });
     el("copy").addEventListener("click", function(){
-      copyText(buildText(c)).then(function(){ markSent(c); toast("Copied. Paste it into your text or email."); },
+      copyText(buildText(c)).then(function(){ markSent(c, "Copied"); toast("Copied. Paste it into your text or email."); },
         function(){ toast("Couldn't copy. Try Share instead."); });
     });
     if (canShare) el("share").addEventListener("click", function(){
-      navigator.share({ title: callTitle(c), text: buildText(c) }).then(function(){ markSent(c); }, function(){});
+      navigator.share({ title: callTitle(c), text: buildText(c) }).then(function(){ markSent(c, "Shared"); }, function(){});
     });
     el("del").addEventListener("click", function(){
       if (!confirm("Delete " + callTitle(c) + "? This can't be undone.")) return;
       db.calls = db.calls.filter(function(o){ return o !== c; }); saveNow(); location.hash = "#/";
     });
   }
-  function markSent(c){ c.sent = Date.now(); saveNow(); }
+  function markSent(c, how){ c.sent = Date.now(); c.sentVia = how; saveNow(); }
+  function sentLabel(c){ return (c.sentVia || "Copied") + " " + when(c.sent); }
+  // "?&body=" is the form both iPhone and Android Messages accept.
+  function smsHref(to, text){ return "sms:" + to.replace(/[^\d+]/g, "") + "?&body=" + encodeURIComponent(text); }
   function copyText(text){
     if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(function(){ return legacyCopy(text); });
     return legacyCopy(text);
@@ -517,7 +660,14 @@
     var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
     var h = '<header class="hero"><div><div class="eyebrow">Profile</div><h1>You</h1><p>Saved on this phone only.</p></div></header><form class="content" onsubmit="return false">' +
       '<div class="f"><label for="me-tech">Your name</label><input id="me-tech" value="' + esc(db.settings.tech || "") + '" autocomplete="name"></div>' +
-      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Filled in for you on every new pre-call.</p>';
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Filled in for you on every new pre-call.</p>' +
+      '<h2>Who you text for help</h2>' +
+      '<div class="cols2"><div class="f"><label for="me-smsname">Name</label><input id="me-smsname" value="' + esc(db.settings.smsName || "") + '" placeholder="Dispatch"></div>' +
+      '<div class="f"><label for="me-smsto">Mobile number</label><input id="me-smsto" type="tel" inputmode="tel" autocomplete="off" value="' + esc(db.settings.smsTo || "") + '"></div></div>' +
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Optional. Text it fills this in. Leave it blank to pick someone each time.</p>' +
+      '<h2>AI check</h2>' +
+      '<div class="f"><label for="me-key">Claude API key</label><input id="me-key" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-ant-…" value="' + esc(db.settings.apiKey || "") + '"></div>' +
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Get one at console.anthropic.com. Each check is billed to that account, usually a few cents. The key is saved on this phone only, so don\'t use a shared phone.</p>';
     if (!standalone){
       h += '<h2>Put it on your home screen</h2><div class="panel">';
       if (installEvt) h += '<button type="button" class="primary" id="install">Install Pre-Call</button>';
@@ -529,6 +679,9 @@
     h += '</form>' + tabs("me");
     app.className = "wrap"; app.innerHTML = h;
     el("me-tech").addEventListener("input", function(){ db.settings.tech = this.value.trim(); save(); });
+    el("me-smsname").addEventListener("input", function(){ db.settings.smsName = this.value.trim(); save(); });
+    el("me-smsto").addEventListener("input", function(){ db.settings.smsTo = this.value.trim(); save(); });
+    el("me-key").addEventListener("input", function(){ db.settings.apiKey = this.value.trim(); save(); });
     if (el("install")) el("install").addEventListener("click", function(){ installEvt.prompt(); installEvt = null; });
     el("wipe").addEventListener("click", function(){
       if (!db.calls.length) return;
