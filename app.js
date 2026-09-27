@@ -147,6 +147,7 @@
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
     share:'<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>',
+    text:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
     calls:'<path d="M9 5h10M9 12h10M9 19h10M4 5h.01M4 12h.01M4 19h.01"/>',
     units:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/>',
     me:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'
@@ -327,7 +328,7 @@
       h += '<h2>Sent</h2><div class="list">' + sent.slice(0, 30).map(function(c){
         return '<a href="#/call/' + c.id + '/review">' + icon("check",' style="color:var(--good)"') +
           '<div class="grow"><b>' + esc(callTitle(c)) + '</b><div class="sub">' + esc(c.v.eqtype || c.v.model || "") + '</div></div>' +
-          '<span class="sub">Copied ' + esc(when(c.sent)) + '</span></a>';
+          '<span class="sub">' + esc(sentLabel(c)) + '</span></a>';
       }).join("") + '</div>';
     }
     h += '</div>' + tabs("calls");
@@ -452,27 +453,36 @@
       return '<div><div class="grow"><div class="k">' + esc(STEPS[s.step].title) + '</div><div class="v">' + esc(body) + '</div></div>' +
         '<a class="link" href="#/call/' + c.id + '/' + s.step + '" aria-label="Edit ' + esc(STEPS[s.step].title) + '">Edit</a></div>';
     }).join("") + '</div>';
-    if (c.sent) h += '<p class="sub" style="text-align:center;color:var(--muted);margin:4px 0 0">Copied ' + esc(when(c.sent)) + '</p>';
+    if (c.sent) h += '<p class="sub" style="text-align:center;color:var(--muted);margin:4px 0 0">' + esc(sentLabel(c)) + '</p>';
     h += '<button type="button" class="danger" id="del">Delete this pre-call</button></div>';
-    var canShare = !!navigator.share;
+    var canShare = !!navigator.share, off = miss.length ? ' disabled' : '';
+    var to = db.settings.smsTo || "";
     h += '<div class="bar"><div class="inner">' +
-      (canShare ? '<button type="button" class="ghost" id="share" aria-label="Share"' + (miss.length ? ' disabled' : '') + '>' + icon("share") + '</button>' : '') +
-      '<button type="button" class="primary grow" id="copy"' + (miss.length ? ' disabled' : '') + '>' + icon("copy") + 'Copy for the call</button></div></div>';
+      (canShare ? '<button type="button" class="ghost" id="share" aria-label="Share"' + off + '>' + icon("share") + '</button>' : '') +
+      '<button type="button" class="ghost" id="copy" aria-label="Copy"' + off + '>' + icon("copy") + '</button>' +
+      (miss.length
+        ? '<a class="primary grow" aria-disabled="true">' + icon("text") + 'Text it</a>'
+        : '<a class="primary grow" id="sms" href="' + esc(smsHref(to, buildText(c))) + '">' + icon("text") + (to ? 'Text ' + esc(db.settings.smsName || "it") : 'Text it') + '</a>') +
+      '</div></div>';
     app.className = "wrap"; app.innerHTML = h;
 
+    if (el("sms")) el("sms").addEventListener("click", function(){ markSent(c, "Texted"); });
     el("copy").addEventListener("click", function(){
-      copyText(buildText(c)).then(function(){ markSent(c); toast("Copied. Paste it into your text or email."); },
+      copyText(buildText(c)).then(function(){ markSent(c, "Copied"); toast("Copied. Paste it into your text or email."); },
         function(){ toast("Couldn't copy. Try Share instead."); });
     });
     if (canShare) el("share").addEventListener("click", function(){
-      navigator.share({ title: callTitle(c), text: buildText(c) }).then(function(){ markSent(c); }, function(){});
+      navigator.share({ title: callTitle(c), text: buildText(c) }).then(function(){ markSent(c, "Shared"); }, function(){});
     });
     el("del").addEventListener("click", function(){
       if (!confirm("Delete " + callTitle(c) + "? This can't be undone.")) return;
       db.calls = db.calls.filter(function(o){ return o !== c; }); saveNow(); location.hash = "#/";
     });
   }
-  function markSent(c){ c.sent = Date.now(); saveNow(); }
+  function markSent(c, how){ c.sent = Date.now(); c.sentVia = how; saveNow(); }
+  function sentLabel(c){ return (c.sentVia || "Copied") + " " + when(c.sent); }
+  // "?&body=" is the form both iPhone and Android Messages accept.
+  function smsHref(to, text){ return "sms:" + to.replace(/[^\d+]/g, "") + "?&body=" + encodeURIComponent(text); }
   function copyText(text){
     if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(function(){ return legacyCopy(text); });
     return legacyCopy(text);
@@ -517,7 +527,11 @@
     var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
     var h = '<header class="hero"><div><div class="eyebrow">Profile</div><h1>You</h1><p>Saved on this phone only.</p></div></header><form class="content" onsubmit="return false">' +
       '<div class="f"><label for="me-tech">Your name</label><input id="me-tech" value="' + esc(db.settings.tech || "") + '" autocomplete="name"></div>' +
-      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Filled in for you on every new pre-call.</p>';
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Filled in for you on every new pre-call.</p>' +
+      '<h2>Who you text for help</h2>' +
+      '<div class="cols2"><div class="f"><label for="me-smsname">Name</label><input id="me-smsname" value="' + esc(db.settings.smsName || "") + '" placeholder="Dispatch"></div>' +
+      '<div class="f"><label for="me-smsto">Mobile number</label><input id="me-smsto" type="tel" inputmode="tel" autocomplete="off" value="' + esc(db.settings.smsTo || "") + '"></div></div>' +
+      '<p class="sub" style="margin:-8px 0 8px;color:var(--muted);font-size:15px">Optional. Text it fills this in. Leave it blank to pick someone each time.</p>';
     if (!standalone){
       h += '<h2>Put it on your home screen</h2><div class="panel">';
       if (installEvt) h += '<button type="button" class="primary" id="install">Install Pre-Call</button>';
@@ -529,6 +543,8 @@
     h += '</form>' + tabs("me");
     app.className = "wrap"; app.innerHTML = h;
     el("me-tech").addEventListener("input", function(){ db.settings.tech = this.value.trim(); save(); });
+    el("me-smsname").addEventListener("input", function(){ db.settings.smsName = this.value.trim(); save(); });
+    el("me-smsto").addEventListener("input", function(){ db.settings.smsTo = this.value.trim(); save(); });
     if (el("install")) el("install").addEventListener("click", function(){ installEvt.prompt(); installEvt = null; });
     el("wipe").addEventListener("click", function(){
       if (!db.calls.length) return;

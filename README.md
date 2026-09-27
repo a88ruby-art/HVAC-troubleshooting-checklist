@@ -4,7 +4,7 @@ A phone app for HVAC techs: work through the checks at the unit, then copy a cle
 
 - **7 short steps** (unit, voltage, amps, refrigerant, air side, heat, the call) with a progress bar you can tap to jump around.
 - **Live flags** as you type: phase and leg imbalance, amps over RLA, blower over FLA, capacitor out of tolerance, superheat for the metering device, temperature split.
-- **Review screen** that puts the flags first and won't copy until the required fields are in.
+- **Review screen** that puts the flags first. Once the required fields are in, **Text it** opens Messages with the whole summary typed in (set who it goes to in Profile), or copy or share it instead.
 - **Saves as you go** on the phone. Unfinished calls wait on the home screen.
 - **Units tab** groups past calls by serial number, and the Unit step tells you when a unit has been called in before.
 - **Works offline** once it has been opened once, and installs to the home screen.
